@@ -1,0 +1,384 @@
+---
+title: "Ecological Footprints: A Study of Factors Contributing to Deficits Across the Globe"
+author: "Anisha Beria"
+output:
+  html_document: default
+---
+---
+
+```{r}
+set.seed(2005) # for reproducibility
+library(tidyverse)
+library(ggthemes)
+library(corrplot)
+library(psych)
+library(leaflet)
+library(knitr)
+library(kableExtra)
+library(plotly)
+library(cowplot)
+library(caret)
+library(randomForest)
+library(rpart.plot)
+library(rpart)
+
+data <- read.csv("/Users/anisha/Downloads/countries.csv", encoding="UTF-8", stringsAsFactors = F)
+glimpse(data)
+summary(data)
+
+data$GDP.per.Capita <-  as.numeric(gsub('[$,]', '', data$GDP.per.Capita))
+
+#Conversion to Factors
+data$Country <- as.factor(data$Country)
+data$Region <- as.factor(data$Region)
+data$Data.Quality <- NULL
+
+#Analysing Countries with Missing Data
+table1_data <- data[is.na(data$HDI), c(1,2)]
+rownames(table1_data) <- NULL
+table1_data %>% kable(caption = "Countries with Missing Data") %>%  kable_styling("striped")
+
+#Visualizing Numeric Variables for Skewness
+multi.hist(data[,sapply(data, is.numeric)])
+
+data %>% ggplot(aes(x = Total.Ecological.Footprint)) +
+  geom_histogram(bins = 30, aes(y = ..density..), fill = "indianred1") + 
+  geom_density(alpha = 0.2, fill = "indianred1") +
+  theme_fivethirtyeight() +
+  ggtitle("Distribution of Total Ecological Footprint") +
+  theme(axis.title = element_text(), axis.title.x = element_text()) +
+  geom_vline(xintercept = mean(data$Total.Ecological.Footprint), size = 2, linetype = 3) +
+  annotate("text", x = 7, y = 0.35, label = "Average Footprint per Capita")
+
+data %>% ggplot(aes(x = Total.Biocapacity)) +
+  geom_histogram(bins = 30, aes(y = ..density..), fill = "lightgreen") + 
+  geom_density(alpha = 0.2, fill = " lightgreen") +
+  theme_fivethirtyeight() +
+  ggtitle("Distribution of Total Biocapacity") +
+  theme(axis.title = element_text(), axis.title.x = element_text()) +
+  geom_vline(xintercept = mean(data$Total.Biocapacity), size = 2, linetype = 3) +
+  annotate("text", x = 7, y = 0.35, label = "Avg Biocapacity per Person")
+
+data %>% ggplot(aes(x = Biocapacity.Deficit.or.Reserve)) +
+  geom_histogram(bins = 30, aes(y = ..density..), fill = "lightyellow") + 
+  geom_density(alpha = 0.2, fill = "lightyellow") +
+  theme_fivethirtyeight() +
+  ggtitle("Distribution of Ecoloigical Deficit/Reserve") +
+  theme(axis.title = element_text(), axis.title.x = element_text()) +
+  geom_vline(xintercept = mean(data$Biocapacity.Deficit.or.Reserve), size = 2, linetype = 3) +
+  annotate("text", x = 7, y = 0.35, label = "Avg Deficit/Reserve per Person")
+
+data %>%
+  group_by(Country) %>%
+  summarise(EcoFootprintMedian = median(`Total.Ecological.Footprint`, na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(Country = reorder(Country,EcoFootprintMedian)) %>%
+  arrange(desc(EcoFootprintMedian)) %>%
+  head(20) %>%
+  
+  
+  ggplot(aes(x = Country,y = EcoFootprintMedian)) +
+  geom_bar(stat='identity', fill = "indianred1") +
+  geom_text(aes(x = Country, y = 1, label = paste0("(",EcoFootprintMedian,")",sep="")),
+            hjust=0, vjust=.5, size = 4, colour = "black",
+            fontface = 'italic') +
+  labs(x = 'Countries', 
+       y = 'Ecological Footprint', 
+       title = 'Countries With Highest Footprint') +
+  coord_flip() +  theme(legend.position = "") 
+
+data %>%
+  group_by(Country) %>%
+  summarise(EcoFootprintMedian = median(`Total.Ecological.Footprint`, na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(Country = reorder(Country,EcoFootprintMedian)) %>%
+  arrange(desc(EcoFootprintMedian)) %>%
+  tail(20) %>%
+  
+  
+  ggplot(aes(x = Country,y = EcoFootprintMedian)) +
+  geom_bar(stat='identity', fill = "indianred1") +
+  geom_text(aes(x = Country, y = 1, label = paste0("(",EcoFootprintMedian,")",sep="")),
+            hjust=0, vjust=.5, size = 2, colour = "black",
+            fontface = 'italic') +
+  labs(x = 'Countries', 
+       y = 'Ecological Footprint', 
+       title = 'Countries With Lowest Footprint') +
+  coord_flip() +  theme(legend.position = "") 
+
+data %>%
+  group_by(Country) %>%
+  summarise(EcoBiocapcityMedian = median(`Total.Biocapacity`, na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(Country = reorder(Country,EcoBiocapcityMedian)) %>%
+  arrange(desc(EcoBiocapcityMedian)) %>%
+  head(20) %>%
+  
+  
+  ggplot(aes(x = Country,y = EcoBiocapcityMedian)) +
+  geom_bar(stat='identity', fill = "lightgreen") +
+  geom_text(aes(x = Country, y = 1, label = paste0("(",EcoBiocapcityMedian,")",sep="")),
+            hjust=0, vjust=.5, size = 4, colour = "black",
+            fontface = 'italic') +
+  labs(x = 'Countries', 
+       y = 'Biocapacity', 
+       title = 'Countries With Highest Biocapacities') +
+  coord_flip() +  theme(legend.position = "") 
+
+data %>%
+  group_by(Country) %>%
+  summarise(EcoDeficitReserveMedian = median(`Biocapacity.Deficit.or.Reserve`, na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(Country = reorder(Country,EcoDeficitReserveMedian)) %>%
+  arrange(desc(EcoDeficitReserveMedian)) %>%
+  head(10) %>%
+  
+  
+  ggplot(aes(x = Country,y = EcoDeficitReserveMedian)) +
+  geom_bar(stat='identity', fill = "green") +
+  geom_text(aes(x = Country, y = 1, label = paste0("(",EcoDeficitReserveMedian,")",sep="")),
+            hjust=0, vjust=.5, size = 4, colour = "black",
+            fontface = 'italic') +
+  labs(x = 'Countries', 
+       y = 'Ecological Reserves', 
+       title = 'Countries With Largest Ecological Reserves') +
+  coord_flip() +  theme(legend.position = "") 
+
+data %>%
+  group_by(Country) %>%
+  summarise(EcoDeficitReserveMedian = median(`Biocapacity.Deficit.or.Reserve`, na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(Country = reorder(Country,EcoDeficitReserveMedian)) %>%
+  arrange(desc(EcoDeficitReserveMedian)) %>%
+  tail(10) %>%
+  
+  
+  ggplot(aes(x = Country,y = EcoDeficitReserveMedian)) +
+  geom_bar(stat='identity', fill = "indianred1") +
+  geom_text(aes(x = Country, y = 1, label = paste0("(",EcoDeficitReserveMedian,")",sep="")),
+            hjust=0, vjust=.4, size = 1.5, colour = "black",
+            fontface = 'italic') +
+  labs(x = 'Countries', 
+       y = 'Ecological Deficits', 
+       title = 'Countries With Largest Ecological Deficits') +
+  coord_flip() +  theme(legend.position = "") 
+
+data %>%
+  group_by(Country) %>%
+  summarise(PopMedian = median(`Population..millions.`, na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(Country = reorder(Country,PopMedian)) %>%
+  arrange(desc(PopMedian)) %>%
+  head(10) %>%
+  
+  
+  ggplot(aes(x = Country,y = PopMedian)) +
+  geom_bar(stat='identity', fill = "yellow") +
+  geom_text(aes(x = Country, y = 1, label = paste0("(",PopMedian,")",sep="")),
+            hjust=0, vjust=.4, size = 1.5, colour = "black",
+            fontface = 'italic') +
+  labs(x = 'Countries', 
+       y = 'Population (in millions)', 
+       title = 'Countries with Highest Population') +
+  coord_flip() +  theme(legend.position = "") 
+
+
+data %>%
+  group_by(Country) %>%
+  summarise(GDPMedian = median(`GDP.per.Capita`, na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(Country = reorder(Country,GDPMedian)) %>%
+  arrange(desc(GDPMedian)) %>%
+  head(10) %>%
+  
+  
+  ggplot(aes(x = Country,y = GDPMedian)) +
+  geom_bar(stat='identity', fill = "olivedrab") +
+  geom_text(aes(x = Country, y = 1, label = paste0("(",GDPMedian,")",sep="")),
+            hjust=0, vjust=.4, size = 1.5, colour = "black",
+            fontface = 'italic') +
+  labs(x = 'Countries', 
+       y = 'GDP per Capita', 
+       title = 'Countries with Highest GDP per Capita') +
+  coord_flip() +  theme(legend.position = "") 
+
+data %>%
+  group_by(Country) %>%
+  summarise(HDIMedian = median(`HDI`, na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(Country = reorder(Country,HDIMedian)) %>%
+  arrange(desc(HDIMedian)) %>%
+  head(10) %>%
+  
+  
+  ggplot(aes(x = Country,y = HDIMedian)) +
+  geom_bar(stat='identity', fill = "violetred") +
+  geom_text(aes(x = Country, y = 1, label = paste0("(",HDIMedian,")",sep="")),
+            hjust=0, vjust=.4, size = 1.5, colour = "black",
+            fontface = 'italic') +
+  labs(x = 'Countries', 
+       y = 'HDI', 
+       title = 'Countries with Highest HDI') +
+  coord_flip() +  theme(legend.position = "")
+
+#Correlation Plots
+k <- data[, sapply(data, is.numeric)]
+k <- k[complete.cases(k), ]
+korelacija <- cor(k)
+corrplot(korelacija, method = "color", tl.cex = 0.825, title = "Pearson's Correlation", mar=c(0,0,1,0))
+
+k2 <- data[, sapply(data, is.numeric)]
+k2 <- k2[complete.cases(k2), ]
+korelacija2 <- cor(k2, method = "spearman")
+corrplot(korelacija2, method = "color", tl.cex = 0.825, title = "Spearman's Correlation", mar = c(0,0,1,0))
+
+#Regional Breakdowns:
+
+#Number of Countries in each Region
+data %>% group_by(Region) %>% tally() %>% 
+  ggplot(aes(x = reorder(Region, n), n)) +
+  geom_bar(stat = "identity", fill = "lightsalmon") +
+  theme_fivethirtyeight() +
+  ggtitle("Number of Countries in each Region") +
+  geom_text(aes(x = Region, y = 1, label = paste0(n)),
+            hjust=0.15, vjust=.5, size = 4, colour = 'black',
+            fontface = 'bold') + coord_flip()
+
+#Total Footprint of each Region
+data %>% group_by(Region) %>% summarise(Total = sum(Total.Ecological.Footprint)) %>% 
+  ggplot(aes(Region, Total, fill = Region)) + geom_histogram(stat = "identity") +
+  theme_fivethirtyeight() +
+  ggtitle("Total Ecological Footprint by Region") +
+  theme(axis.text.x = element_text(angle = 20, vjust = 0.65))
+
+#Biocapacities in each Region
+data %>% group_by(Region) %>% summarise(Total = sum(Total.Biocapacity)) %>% 
+  ggplot(aes(Region, Total, fill = Region)) + geom_histogram(stat = "identity") +
+  theme_fivethirtyeight() +
+  ggtitle("Total Biocapacity by Region") +
+  theme(axis.text.x = element_text(angle = 20, vjust = 0.65))
+
+#Ecological Deficit/Reserve in each Region
+data %>% group_by(Region) %>% summarise(Total = sum(Biocapacity.Deficit.or.Reserve)) %>% 
+  ggplot(aes(Region, Total, fill = Region)) + geom_histogram(stat = "identity") +
+  theme_fivethirtyeight() +
+  ggtitle("Total Deficit/Reserve by Region") +
+  theme(axis.text.x = element_text(angle = 20, vjust = 0.65))
+
+#Plotting Footprint over HDI by Region and Population
+by_region <- data %>%
+  group_by(HDI, Region) %>%
+  summarize(FootprintMedian = median(`Total.Ecological.Footprint`),
+            PopulationMedian = median(`Population..millions.`))
+
+ggplot(by_region, aes(x = HDI, y = FootprintMedian, color = Region, size = PopulationMedian)) +
+  geom_point(alpha=0.7) + ylab("Ecological Footprint") + labs(title="Countries' Footprints over HDI by Region and Population") + scale_color_manual(values = c("mediumseagreen", "orange", "mediumpurple", "mediumvioletred", "lightskyblue" ,"khaki1" ,"khaki4"))+ xlab("HDI") +ylab("Footprint")
+
+#Plotting Footprint over GDP by Region and Population
+by_region <- data %>%
+  group_by(GDP.per.Capita, Region) %>%
+  summarize(FootprintMedian = median(`Total.Ecological.Footprint`),
+            PopulationMedian = median(`Population..millions.`))
+
+ggplot(by_region, aes(x = GDP.per.Capita, y = FootprintMedian, color = Region, size = PopulationMedian)) +
+  geom_point(alpha=0.7) + ylab("Ecological Footprint") + labs(title="Countries' Footprints over GDP per Capita by Region and Population") + scale_color_manual(values = c("mediumseagreen", "orange", "mediumpurple", "mediumvioletred", "lightskyblue" ,"khaki1" ,"khaki4"))+ xlab("GDP") +ylab("Footprint")
+
+#Plotting Deficit/Reserve over HDI by Region and Population
+by_region <- data %>%
+  group_by(HDI, Region) %>%
+  summarize(DeficitMedian = median(`Biocapacity.Deficit.or.Reserve`),
+            PopulationMedian = median(`Population..millions.`))
+
+ggplot(by_region, aes(x = HDI, y = DeficitMedian, color = Region, size = PopulationMedian)) +
+  geom_point(alpha=0.7) + ylab("Ecological Deficit/Reserve") + labs(title="Countries' Deficit/Reserve over HDI by Region and Population") + scale_color_manual(values = c("mediumseagreen", "orange", "mediumpurple", "mediumvioletred", "lightskyblue" ,"khaki1" ,"khaki4"))+ xlab("HDI") +ylab("Deficit/Reserve")
+
+#Plotting Deficit/Reserve over GDP by Region and Population
+by_region <- data %>%
+  group_by(GDP.per.Capita, Region) %>%
+  summarize(DeficitMedian = median(`Biocapacity.Deficit.or.Reserve`),
+            PopulationMedian = median(`Population..millions.`))
+
+ggplot(by_region, aes(x = GDP.per.Capita, y = DeficitMedian, color = Region, size = PopulationMedian)) +
+  geom_point(alpha=0.7) + ylab("Ecological Deficit/Reserve") + labs(title="Countries' Deficit/Reserve over GDP per Capita by Region and Population") + scale_color_manual(values = c("mediumseagreen", "orange", "mediumpurple", "mediumvioletred", "lightskyblue" ,"khaki1" ,"khaki4"))+ xlab("GDP") +ylab("Deficit/Reserve")
+
+#Plotting GDP over HDI by Region and Population
+by_region <- data %>%
+  group_by(HDI, Region) %>%
+  summarize(GDPMedian = median(`GDP.per.Capita`),
+            PopulationMedian = median(`Population..millions.`))
+
+ggplot(by_region, aes(x = HDI, y = GDPMedian, color = Region, size =  PopulationMedian)) + geom_point(alpha=0.7) + ylab("GDP Per Capita") + labs(title="Countries' Human Developent Index over GDP Per Capita by Region and Population") + scale_color_manual(values = c("mediumseagreen", "orange", "mediumpurple", "mediumvioletred", "lightskyblue" ,"khaki1" ,"khaki4")) + xlab("HDI") + ylab("GDP Per Capita")
+
+#Linear Regression Model
+
+#Simple Linear Regression using HDI as the single predictor
+
+LinearModelHDI <- lm(Total.Ecological.Footprint ~ HDI, data = data)
+summary(LinearModelHDI)
+
+#Exponential Linear Regression using HDI as the single predictor
+
+LinearModelHDI2 <- lm(Total.Ecological.Footprint ~ I(exp(HDI)), data = data)
+summary(LinearModelHDI2)
+
+#Linear Regression with Squared Term using HDI as the single predictor
+
+LinearModelHDI3 <- lm(Total.Ecological.Footprint ~ HDI + I(HDI**2), data = data)
+summary(LinearModelHDI3)
+
+
+linearRegression <- ggplot(data, aes(HDI, Total.Ecological.Footprint)) +
+  geom_point(aes(text = Country)) +
+  geom_smooth(method= "lm", color = "red", linetype = 1, se=F) +
+  geom_smooth(method= "lm", formula = (y ~ x + I(x**2)), color = "blue", linetype = 2, se=F) +
+  ggtitle("Simple Linear Regression Model (HDI)")
+
+ggplotly(linearRegression, tooltip = "text")
+
+LinearModelGDP <- lm(Total.Ecological.Footprint ~ GDP.per.Capita + I(GDP.per.Capita**2), data = data)
+summary(LinearModelGDP)
+
+linearRegression2 <- ggplot(data, aes(GDP.per.Capita, Total.Ecological.Footprint)) +
+  geom_point(aes(text = Country)) +
+  geom_smooth(method= "lm", color = "red", linetype = 1, se=F) +
+  geom_smooth(method= "lm", formula = (y ~ x + I(x**2)), color = "blue", linetype = 2, se=F) +
+  ggtitle("Simple Linear Regression Model (GDP per Capita)")
+
+ggplotly(linearRegression2, tooltip = "text")
+
+#Multiple Linear Regression using HDI and GDP per Capita
+
+MultipleModel<- lm(Total.Ecological.Footprint ~ GDP.per.Capita + HDI + I(GDP.per.Capita**2) + I(HDI**2), data = data)
+summary(MultipleModel)
+
+#Note: Did not use Population because it had very low Pearson/Spearman Coorelations to Footprint
+
+MultipleModel2<- lm(Biocapacity.Deficit.or.Reserve ~ Total.Ecological.Footprint + Total.Biocapacity + I(Total.Ecological.Footprint**2) + I(Total.Biocapacity**2), data = data)
+summary(MultipleModel2)
+
+linearRegression3 <- ggplot(data, aes(Cropland, Total.Ecological.Footprint)) +
+  geom_point(aes(text = Country)) +
+  geom_smooth(method= "lm", color = "red", linetype = 1, se=F) +
+  geom_smooth(method= "lm", formula = (y ~ x + I(x**2)), color = "blue", linetype = 2, se=F) +
+  ggtitle("Simple Linear Regression Model (Cropland)")
+
+ggplotly(linearRegression3, tooltip = "text")
+
+linearRegression4 <- ggplot(data, aes(Forest.Land, Total.Ecological.Footprint)) +
+  geom_point(aes(text = Country)) +
+  geom_smooth(method= "lm", color = "red", linetype = 1, se=F) +
+  geom_smooth(method= "lm", formula = (y ~ x + I(x**2)), color = "blue", linetype = 2, se=F) +
+  ggtitle("Simple Linear Regression Model (Forest Land)")
+
+ggplotly(linearRegression4, tooltip = "text")
+
+linearRegression5 <- ggplot(data, aes(Fishing.Water, Total.Ecological.Footprint)) +
+  geom_point(aes(text = Country)) +
+  geom_smooth(method= "lm", color = "red", linetype = 1, se=F) +
+  geom_smooth(method= "lm", formula = (y ~ x + I(x**2)), color = "blue", linetype = 2, se=F) +
+  ggtitle("Simple Linear Regression Model (Fishing Land)")
+
+ggplotly(linearRegression5, tooltip = "text")
+
+
+```
